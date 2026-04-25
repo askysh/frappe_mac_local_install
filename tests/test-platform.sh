@@ -25,4 +25,34 @@ assert_eq "/opt/homebrew/opt/node@20/bin/node" "$(fl_node_bin)"
 assert_eq "/opt/homebrew/opt/node@20/bin/npm" "$(fl_npm_bin)"
 assert_eq "/opt/homebrew/opt/mariadb@10.11/bin/mariadb" "$(fl_mariadb_bin)"
 
+assert_fails() {
+  if ( "$@" ) >/dev/null 2>&1; then
+    printf 'Expected failure: %s\n' "$*"
+    exit 1
+  fi
+}
+
+FL_EFFECTIVE_UID=501
+fl_preflight_not_root
+FL_EFFECTIVE_UID=0
+assert_fails fl_preflight_not_root
+unset FL_EFFECTIVE_UID
+
+FL_DISK_AVAILABLE_GB=20
+fl_preflight_disk_space 10 "$ROOT"
+FL_DISK_AVAILABLE_GB=5
+assert_fails fl_preflight_disk_space 10 "$ROOT"
+unset FL_DISK_AVAILABLE_GB
+
+curl() {
+  return 0
+}
+fl_preflight_internet 0
+
+curl() {
+  return 1
+}
+assert_fails fl_preflight_internet 0
+fl_preflight_internet 1
+
 printf 'test-platform: ok\n'

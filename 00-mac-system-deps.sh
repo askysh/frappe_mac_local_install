@@ -85,6 +85,7 @@ fl_platform_init
 add_pending() { PENDING_STEPS+=("$1"); }
 
 fl_section "SYSTEM"
+fl_preflight_basics "$OFFLINE" "$FL_MIN_DISK_GB" "$HOME"
 MACOS_VERSION="$(sw_vers | awk -F':[[:space:]]*' '$1 == "ProductVersion" { print $2 }')"
 fl_ok "macOS detected (${MACOS_VERSION})"
 if [[ "$FL_ARCH" != "arm64" ]]; then
@@ -168,6 +169,9 @@ fl_ok "yarn - ${YARN_VERSION} at ${YARN_BIN}"
 
 fl_section "DATABASE"
 fl_brew_ensure "$FL_MARIADB_FORMULA"
+if fl_port_listening 3306; then
+  fl_mariadb_safe_mode_note
+fi
 MARIADB_BIN="$(fl_mariadb_bin)"
 [[ -x "$MARIADB_BIN" ]] || MARIADB_BIN="$(command -v mariadb || true)"
 [[ -n "$MARIADB_BIN" && -x "$MARIADB_BIN" ]] || fl_die "mariadb client not found." "Try: brew reinstall ${FL_MARIADB_FORMULA}"

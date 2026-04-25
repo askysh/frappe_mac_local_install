@@ -49,6 +49,7 @@ fl_bench_complete() {
 
 fl_bench_init_if_needed() {
   local bench_dir="$1" frappe_ref="$2" python_bin="$3" repair="${4:-0}" timestamp backup
+  local timeout_seconds="${BENCH_INIT_TIMEOUT_SECONDS:-2700}"
   fl_section "BENCH INIT"
   fl_info "Checking bench directory ${bench_dir}"
   if fl_bench_complete "$bench_dir"; then
@@ -66,7 +67,8 @@ fl_bench_init_if_needed() {
     fl_run mv "$bench_dir" "$backup"
   fi
   fl_info "Running bench init for frappe ref ${frappe_ref}"
-  fl_run bench init "$bench_dir" --frappe-branch "$frappe_ref" --python "$python_bin" --verbose \
+  fl_info "bench init timeout: $((timeout_seconds / 60)) minutes"
+  fl_run_with_timeout "$timeout_seconds" "bench init" bench init "$bench_dir" --frappe-branch "$frappe_ref" --python "$python_bin" --verbose \
     || fl_die "bench init failed." "Manual command: bench init ${bench_dir} --frappe-branch ${frappe_ref} --python ${python_bin} --verbose"
   fl_state_set BENCH_INIT complete
 }

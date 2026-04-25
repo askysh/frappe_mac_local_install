@@ -2,12 +2,53 @@
 
 FL_BREW_PREFIX="${FL_BREW_PREFIX:-}"
 FL_ARCH="${FL_ARCH:-}"
+FL_MIN_DISK_GB="${FL_MIN_DISK_GB:-10}"
+FL_CONNECTIVITY_URL="${FL_CONNECTIVITY_URL:-https://1.1.1.1}"
 
 fl_platform_init() {
   [[ "$(uname -s)" == "Darwin" ]] || fl_die "Not running on macOS." "This installer targets macOS."
   fl_require_cmd brew "Install Homebrew from https://brew.sh"
   FL_BREW_PREFIX="$(brew --prefix)"
   FL_ARCH="$(uname -m)"
+}
+
+fl_preflight_not_root() {
+  local effective_uid="${FL_EFFECTIVE_UID:-$EUID}"
+  [[ "$effective_uid" != "0" ]] || fl_die "Do not run this installer as root." "Run it as your normal macOS user; the scripts will ask for sudo only where macOS requires it."
+  fl_ok "Running as a regular user"
+}
+
+fl_preflight_disk_space() {
+  local min_gb="${1:-$FL_MIN_DISK_GB}" path="${2:-$HOME}" available_gb
+  if [[ -n "${FL_DISK_AVAILABLE_GB:-}" ]]; then
+    available_gb="$FL_DISK_AVAILABLE_GB"
+  else
+    available_gb="$(df -Pk "$path" | awk 'NR == 2 { print int($4 / 1024 / 1024) }')"
+  fi
+  [[ -n "$available_gb" ]] || fl_die "Could not determine free disk space." "Check disk availability and re-run."
+  if [[ "$available_gb" -lt "$min_gb" ]]; then
+    fl_die "At least ${min_gb} GB free disk space is required; found ${available_gb} GB." "Free disk space and re-run."
+  fi
+  fl_ok "${available_gb} GB free disk space available"
+}
+
+fl_preflight_internet() {
+  local offline="${1:-0}"
+  if [[ "$offline" == "1" || "$FL_DRY_RUN" == "1" ]]; then
+    fl_warn "Skipping internet connectivity check."
+    return 0
+  fi
+  fl_require_cmd curl "Install curl or check your macOS base tools."
+  curl -fsSL --max-time 5 "$FL_CONNECTIVITY_URL" >/dev/null \
+    || fl_die "No internet connection detected." "Connect to the internet, or re-run supported commands with --offline where available."
+  fl_ok "Internet connectivity available"
+}
+
+fl_preflight_basics() {
+  local offline="${1:-0}" min_gb="${2:-$FL_MIN_DISK_GB}" path="${3:-$HOME}"
+  fl_preflight_not_root
+  fl_preflight_disk_space "$min_gb" "$path"
+  fl_preflight_internet "$offline"
 }
 
 fl_brew_ensure() {
@@ -31,6 +72,17 @@ fl_process_running() {
 fl_brew_service_running() {
   local svc="$1"
   brew services list 2>/dev/null | awk -v s="$svc" '$1==s {print $2}' | grep -q '^started$'
+}
+
+fl_port_listening() {
+  local port="$1"
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+fl_mariadb_safe_mode_note() {
+  fl_warn "Existing MariaDB/MySQL may already be using port 3306."
+  fl_info "Safe path: keep the existing database untouched, verify the root password, and let the bench script reuse it."
+  fl_info "This installer does not delete MariaDB data or reset root auth automatically."
 }
 
 fl_ensure_service_started() {

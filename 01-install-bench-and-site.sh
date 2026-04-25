@@ -159,6 +159,8 @@ if [[ "$CHECK_UPDATES" == "1" ]]; then
 fi
 
 fl_platform_init
+fl_section "PRECHECK"
+fl_preflight_basics "$OFFLINE" "$FL_MIN_DISK_GB" "$HOME"
 export PATH="${FL_BREW_PREFIX}/opt/${FL_PYTHON_FORMULA}/bin:${FL_BREW_PREFIX}/opt/${FL_NODE_FORMULA}/bin:${FL_BREW_PREFIX}/opt/${FL_MARIADB_FORMULA}/bin:$HOME/.local/bin:$PATH"
 export LDFLAGS="-L${FL_BREW_PREFIX}/opt/openssl@3/lib -L${FL_BREW_PREFIX}/opt/libffi/lib -L${FL_BREW_PREFIX}/opt/zlib/lib"
 export CPPFLAGS="-I${FL_BREW_PREFIX}/opt/openssl@3/include -I${FL_BREW_PREFIX}/opt/libffi/include -I${FL_BREW_PREFIX}/opt/zlib/include"
@@ -175,7 +177,6 @@ else
   fl_warn "Offline mode: skipping remote branch/tag checks. Failures may happen later during git clone."
 fi
 
-fl_section "PRECHECK"
 if [[ "$FL_DRY_RUN" == "1" ]]; then
   for cmd in "$FL_PYTHON_BIN_NAME" node npm yarn mariadb redis-server wkhtmltopdf; do
     if command -v "$cmd" >/dev/null 2>&1; then
@@ -193,6 +194,9 @@ else
   fl_require_cmd mariadb "Run ./00-mac-system-deps.sh --profile ${FL_PROFILE}"
   fl_require_cmd redis-server "Run ./00-mac-system-deps.sh --profile ${FL_PROFILE}"
   fl_require_cmd wkhtmltopdf "Install patched-Qt build from https://github.com/wkhtmltopdf/packaging/releases"
+  if fl_port_listening 3306; then
+    fl_mariadb_safe_mode_note
+  fi
   fl_process_running mariadbd || fl_die "mariadbd is not running." "brew services start ${FL_MARIADB_FORMULA}"
   fl_process_running redis-server || fl_die "redis-server is not running." "brew services start redis"
   fl_ok "system services are running"

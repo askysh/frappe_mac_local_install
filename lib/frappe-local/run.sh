@@ -17,6 +17,63 @@ fl_run() {
   "$@"
 }
 
+fl_run_with_timeout() {
+  local timeout_seconds="$1" label="$2" log pid start elapsed code state
+  shift 2
+  FL_LAST_COMMAND="$*"
+  if [[ "$FL_DRY_RUN" == "1" ]]; then
+    fl_info "dry-run: $*"
+    return 0
+  fi
+  if [[ "$timeout_seconds" -le 0 ]]; then
+    "$@"
+    return $?
+  fi
+
+  log="$(mktemp "${TMPDIR:-/tmp}/frappe-local-command.XXXXXX")"
+  "$@" </dev/null >"$log" 2>&1 &
+  pid="$!"
+  start="$SECONDS"
+
+  while kill -0 "$pid" >/dev/null 2>&1; do
+    state="$(ps -o state= -p "$pid" 2>/dev/null | awk '{print $1}')"
+    if [[ "$state" == T* ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fl_fail "${label} stopped while waiting for input."
+      fl_info "Run the command manually if it needs an interactive answer: ${FL_LAST_COMMAND}"
+      rm -f "$log"
+      return 125
+    fi
+
+    elapsed=$((SECONDS - start))
+    if [[ "$elapsed" -ge "$timeout_seconds" ]]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fl_fail "${label} timed out after ${timeout_seconds}s."
+      if [[ -s "$log" ]]; then
+        fl_info "Last output:"
+        tail -n 80 "$log" || true
+      fi
+      rm -f "$log"
+      return 124
+    fi
+    sleep 1
+  done
+
+  code=0
+  wait "$pid" || code="$?"
+  if [[ "$code" -ne 0 && -s "$log" ]]; then
+    cat "$log"
+  fi
+  rm -f "$log"
+  return "$code"
+}
+
 fl_capture() {
   FL_LAST_COMMAND="$*"
   "$@"

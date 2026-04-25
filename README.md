@@ -13,6 +13,8 @@ Frappe, Homebrew, MariaDB, Redis, Python, and Node footnote first.
 - ERPNext installed by default
 - Optional public Frappe apps such as HRMS, Payments, CRM, Helpdesk, and Insights
 - Safe re-runs: existing bench, apps, site, and installed apps are skipped
+- Preflight checks for user privileges, disk space, and internet access
+- Timeout handling around long `bench init` runs
 
 ## Requirements
 
@@ -137,6 +139,10 @@ trying to install them.
 
 Both scripts are designed to be re-run.
 
+If MariaDB or MySQL is already listening on port `3306`, the scripts print safe
+reuse guidance. The normal path is to keep your existing database data and auth
+untouched, verify the root password, and let the bench/site script reuse it.
+
 For non-interactive runs, provide passwords through environment variables:
 
 ```bash
@@ -228,6 +234,7 @@ tests/
 ```
 
 Keep those directories with the scripts when sharing or cloning the repo.
+See `CHANGELOG.md` for release notes and `ROADMAP.md` for planned directions.
 
 ## Important Notes
 
