@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+
+fl_bench_run() {
+  local bench_dir="$1"; shift
+  FL_LAST_COMMAND="cd ${bench_dir} && $*"
+  if [[ "$FL_DRY_RUN" == "1" ]]; then
+    fl_info "dry-run: ${FL_LAST_COMMAND}"
+    return 0
+  fi
+  (cd "$bench_dir" && "$@")
+}
+
+fl_install_pipx_if_needed() {
+  fl_section "PIPX"
+  fl_info "Checking pipx"
+  if command -v pipx >/dev/null 2>&1; then
+    fl_ok "pipx already installed - $(pipx --version)"
+  else
+    fl_warn "pipx is missing; installing with Homebrew"
+    fl_run brew install pipx || fl_die "pipx install failed." "Manual command: brew install pipx"
+  fi
+  PIPX_BIN_DIR="$(pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")"
+  export PATH="${PIPX_BIN_DIR}:$PATH"
+  fl_state_set PIPX_BIN_DIR "$PIPX_BIN_DIR"
+}
+
+fl_install_bench_if_needed() {
+  fl_section "BENCH CLI"
+  fl_info "Checking frappe-bench CLI"
+  if command -v bench >/dev/null 2>&1; then
+    fl_ok "bench at $(command -v bench)"
+    return 0
+  fi
+  if pipx list 2>/dev/null | grep -q '^   package frappe-bench'; then
+    fl_info "frappe-bench already installed via pipx"
+  else
+    fl_warn "frappe-bench is missing; installing with pipx"
+    fl_run pipx install frappe-bench || fl_die "frappe-bench install failed." "Manual command: pipx install frappe-bench"
+  fi
+  command -v bench >/dev/null 2>&1 || fl_die "bench command not found after pipx install." "Manual check: ls ${PIPX_BIN_DIR}/bench"
+  fl_state_set BENCH_BIN "$(command -v bench)"
+  fl_ok "bench version: $(bench --version 2>/dev/null || echo installed)"
+}
+
+fl_bench_complete() {
+  local bench_dir="$1"
+  [[ -d "$bench_dir/apps/frappe" && -d "$bench_dir/env" && -f "$bench_dir/sites/apps.txt" ]]
+}
+
+fl_bench_init_if_needed() {
+  local bench_dir="$1" frappe_ref="$2" python_bin="$3" repair="${4:-0}" timestamp backup
+  fl_section "BENCH INIT"
+  fl_info "Checking bench directory ${bench_dir}"
+  if fl_bench_complete "$bench_dir"; then
+    fl_ok "${bench_dir} already initialized"
+    fl_state_set BENCH_INIT complete
+    return 0
+  fi
+  if [[ -e "$bench_dir" ]]; then
+    if [[ "$repair" != "1" ]]; then
+      fl_die "Bench directory exists but is incomplete: ${bench_dir}" "Move it aside or rerun with --repair-bench after reading: mv ${bench_dir} ${bench_dir}.incomplete.\$(date +%Y%m%d%H%M%S)"
+    fi
+    timestamp="$(date +%Y%m%d%H%M%S)"
+    backup="${bench_dir}.incomplete.${timestamp}"
+    fl_warn "Moving incomplete bench to ${backup}"
+    fl_run mv "$bench_dir" "$backup"
+  fi
+  fl_info "Running bench init for frappe ref ${frappe_ref}"
+  fl_run bench init "$bench_dir" --frappe-branch "$frappe_ref" --python "$python_bin" --verbose \
+    || fl_die "bench init failed." "Manual command: bench init ${bench_dir} --frappe-branch ${frappe_ref} --python ${python_bin} --verbose"
+  fl_state_set BENCH_INIT complete
+}
+
+fl_get_app_if_needed() {
+  local bench_dir="$1" app="$2" branch="$3" repo="${4:-}" commit="${5:-}" pin="${6:-0}"
+  fl_info "Checking app ${app}"
+  if [[ -d "$bench_dir/apps/$app" ]]; then
+    fl_ok "apps/${app} already cloned"
+  else
+    fl_info "Getting ${app} at ${branch}"
+    if [[ -n "$repo" ]]; then
+      fl_bench_run "$bench_dir" bench get-app --branch "$branch" "$repo" \
+        || fl_die "bench get-app failed for ${app}." "Manual command: cd ${bench_dir} && bench get-app --branch ${branch} ${repo}"
+    else
+      fl_bench_run "$bench_dir" bench get-app --branch "$branch" "$app" \
+        || fl_die "bench get-app failed for ${app}." "Manual command: cd ${bench_dir} && bench get-app --branch ${branch} ${app}"
+    fi
+  fi
+  if [[ "$pin" == "1" && -n "$commit" && -d "$bench_dir/apps/$app/.git" ]]; then
+    fl_warn "Pinning ${app} to commit ${commit}"
+    fl_run git -C "$bench_dir/apps/$app" fetch --all --tags
+    fl_run git -C "$bench_dir/apps/$app" checkout "$commit" \
+      || fl_die "commit checkout failed for ${app}." "Manual command: git -C ${bench_dir}/apps/${app} checkout ${commit}"
+  fi
+  fl_state_set "APP_${app}_CLONED" yes
+}
+
+fl_new_site_if_needed() {
+  local bench_dir="$1" site_name="$2" db_password="$3" admin_password="$4"
+  fl_section "CREATE SITE"
+  fl_info "Checking site ${site_name}"
+  if [[ -d "$bench_dir/sites/$site_name" ]]; then
+    fl_ok "Site ${site_name} already exists"
+    fl_state_set SITE_CREATED yes
+    return 0
+  fi
+  fl_bench_run "$bench_dir" bench new-site "$site_name" \
+    --mariadb-root-password "$db_password" \
+    --admin-password "$admin_password" \
+    --no-mariadb-socket \
+    || fl_die "bench new-site failed." "Manual command: cd ${bench_dir} && bench new-site ${site_name} --no-mariadb-socket"
+  fl_state_set SITE_CREATED yes
+}
+
+fl_install_app_if_needed() {
+  local bench_dir="$1" site_name="$2" app="$3" installed
+  fl_info "Checking site app ${app}"
+  if [[ "$FL_DRY_RUN" == "1" && ! -d "$bench_dir" ]]; then
+    installed=""
+  else
+    installed="$(cd "$bench_dir" && bench --site "$site_name" list-apps 2>/dev/null || true)"
+  fi
+  if printf '%s\n' "$installed" | awk '{print $1}' | grep -qx "$app"; then
+    fl_ok "${app} already installed on ${site_name}"
+  else
+    fl_bench_run "$bench_dir" bench --site "$site_name" install-app "$app" \
+      || fl_die "bench install-app failed for ${app}." "Manual command: cd ${bench_dir} && bench --site ${site_name} install-app ${app}"
+  fi
+  fl_state_set "APP_${app}_INSTALLED" yes
+}
+
+fl_verify_site_health() {
+  local bench_dir="$1" site_name="$2"
+  fl_section "VERIFY SITE"
+  fl_bench_run "$bench_dir" bench --site "$site_name" list-apps
+  if [[ "$FL_DRY_RUN" == "1" ]]; then
+    fl_info "dry-run: cd ${bench_dir} && bench --site ${site_name} doctor"
+    fl_info "dry-run: cd ${bench_dir} && bench use ${site_name}"
+    return 0
+  fi
+  if ! (cd "$bench_dir" && bench --site "$site_name" doctor); then
+    fl_warn "bench doctor reported issues; the site may still be usable."
+  fi
+  fl_bench_run "$bench_dir" bench use "$site_name"
+}

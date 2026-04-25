@@ -1,0 +1,4 @@
+bundle	label	apps	notes
+minimal	Minimal ERPNext	erpnext	Smallest useful local ERPNext bench
+common	ERPNext + common apps	erpnext hrms payments	ERPNext with HRMS and Payments
+extended	Public app sampler	erpnext hrms payments crm helpdesk insights	Public Frappe apps commonly useful in local development

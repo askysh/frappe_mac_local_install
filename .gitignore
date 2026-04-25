@@ -1,0 +1,6 @@
+.DS_Store
+.frappe-local/
+frappe-bench/
+*.incomplete.*
+*.log
+tests/tmp/
