@@ -85,7 +85,8 @@ fl_platform_init
 add_pending() { PENDING_STEPS+=("$1"); }
 
 fl_section "SYSTEM"
-fl_ok "macOS detected ($(sw_vers -productVersion))"
+MACOS_VERSION="$(sw_vers | awk -F':[[:space:]]*' '$1 == "ProductVersion" { print $2 }')"
+fl_ok "macOS detected (${MACOS_VERSION})"
 if [[ "$FL_ARCH" != "arm64" ]]; then
   fl_warn "Architecture is ${FL_ARCH}; this script is tuned for Apple Silicon."
 else
