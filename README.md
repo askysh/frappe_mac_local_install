@@ -112,8 +112,8 @@ In Terminal:
 
 ```bash
 cd ~
-git clone https://github.com/askysh/frappe_mac_local_install.git
-cd frappe_mac_local_install
+git clone https://github.com/askysh/frappe_mac_dev_server.git
+cd frappe_mac_dev_server
 ```
 
 If `git clone` fails with "command not found", run
@@ -541,7 +541,7 @@ To remove the bench and site without uninstalling Homebrew packages:
 ```bash
 # Stop bench if it's running (Ctrl+C in the bench start Terminal)
 rm -rf ~/frappe-bench
-rm -rf ~/frappe_mac_local_install/.frappe-local
+rm -rf ~/frappe_mac_dev_server/.frappe-local
 ```
 
 To also drop the site database and DB user:
